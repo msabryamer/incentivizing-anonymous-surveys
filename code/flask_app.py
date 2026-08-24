@@ -137,6 +137,7 @@ HTML_TEMPLATE = """
             <div class="alert alert-{{ message_type }}">{{ message }}</div>
         {% endif %}
 
+        {% if message_type != 'success' %}
         <form method="POST" action="/">
             {% if ask_username %}
             <input type="text" name="username" placeholder="e.g., your_username" required>
@@ -144,6 +145,7 @@ HTML_TEMPLATE = """
             <input type="text" name="email" placeholder="e.g., user@example.com" required>
             <button type="submit">Submit Entry</button>
         </form>
+        {% endif %}
     </div>
 </body>
 </html>
