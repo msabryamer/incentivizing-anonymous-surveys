@@ -6,7 +6,7 @@ app = Flask(__name__)
 
 # Paths - Using absolute paths relative to this file for PythonAnywhere compatibility
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ELIGIBLE_CSV_PATH = os.path.join(BASE_DIR, 'data', 'email_list.csv')
+VERIFY_CSV_PATH = os.path.join(BASE_DIR, 'data', 'verify_list.csv')
 COLLECTED_CSV_PATH = os.path.join(BASE_DIR, 'data', 'collected_emails.csv')
 
 def is_valid_email(email):
@@ -15,18 +15,21 @@ def is_valid_email(email):
         return email.rindex('.') > email.index('@')
     return False
 
-def load_eligible_emails():
+def load_verify_list():
     try:
-        email_list = pd.read_csv(ELIGIBLE_CSV_PATH)
-        return [str(email).strip().lower() for email in email_list.iloc[:, 0].values]
+        verify_list = pd.read_csv(VERIFY_CSV_PATH)
+        return [str(val).strip().lower() for val in verify_list.iloc[:, 0].values]
     except FileNotFoundError:
-        return []
+        return None
 
-def load_collected_emails():
+def load_collected_emails(has_verify_list=False):
     if os.path.exists(COLLECTED_CSV_PATH):
         return pd.read_csv(COLLECTED_CSV_PATH)
     else:
-        return pd.DataFrame(columns=['email', 'verified'])
+        if has_verify_list:
+            return pd.DataFrame(columns=['email', 'username', 'verified', 'referrer'])
+        else:
+            return pd.DataFrame(columns=['email', 'referrer'])
 
 def save_collected_emails(df):
     df.to_csv(COLLECTED_CSV_PATH, index=False)
@@ -135,7 +138,10 @@ HTML_TEMPLATE = """
         {% endif %}
 
         <form method="POST" action="/">
-            <input type="text" name="email" placeholder="e.g., student@uchicago.edu" required>
+            {% if ask_username %}
+            <input type="text" name="username" placeholder="e.g., your_username" required>
+            {% endif %}
+            <input type="text" name="email" placeholder="e.g., user@example.com" required>
             <button type="submit">Submit Entry</button>
         </form>
     </div>
@@ -147,9 +153,12 @@ HTML_TEMPLATE = """
 def index():
     message = None
     message_type = None
+    ask_username = os.path.exists(VERIFY_CSV_PATH)
 
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
+        username = request.form.get('username', '').strip().lower() if ask_username else None
+        referrer = request.referrer or ""
         
         if not email:
             message = "⚠️ Please enter an email address."
@@ -157,11 +166,14 @@ def index():
         elif not is_valid_email(email):
             message = "❌ Invalid email format. Please check your spelling and try again."
             message_type = "error"
+        elif ask_username and not username:
+            message = "⚠️ Please enter a username."
+            message_type = "warning"
         else:
-            eligible_emails = load_eligible_emails()
-            collected_emails = load_collected_emails()
+            verify_list = load_verify_list()
+            collected_emails = load_collected_emails(has_verify_list=ask_username)
             
-            # Check if already submitted
+            # Check if already submitted email
             if not collected_emails.empty and email in collected_emails['email'].str.lower().values:
                 message = "⚠️ This email has already been submitted."
                 message_type = "warning"
@@ -171,11 +183,17 @@ def index():
                     collected_emails = collected_emails.sample(frac=1).reset_index(drop=True)
                 save_collected_emails(collected_emails)
             else:
-                # Check eligibility (verified=1 if in list, else 0)
-                is_verified = 1 if email in eligible_emails else 0
-                
-                # Add new email
-                new_row = pd.DataFrame({'email': [email], 'verified': [is_verified]})
+                if ask_username:
+                    # Drop old row if username matches
+                    if not collected_emails.empty and 'username' in collected_emails.columns:
+                        if username in collected_emails['username'].str.lower().values:
+                            collected_emails = collected_emails[collected_emails['username'].str.lower() != username]
+                            
+                    is_verified = 1 if (verify_list is not None and username in verify_list) else 0
+                    new_row = pd.DataFrame({'email': [email], 'username': [username], 'verified': [is_verified], 'referrer': [referrer]})
+                else:
+                    new_row = pd.DataFrame({'email': [email], 'referrer': [referrer]})
+                    
                 collected_emails = pd.concat([collected_emails, new_row], ignore_index=True)
                 
                 # SHUFFLE the DataFrame to decouple submission time/order from the email
@@ -185,10 +203,10 @@ def index():
                 # Save
                 save_collected_emails(collected_emails)
                 
-                message = "🎉 Success! Your email has been recorded."
+                message = "🎉 Success! Your entry has been recorded."
                 message_type = "success"
 
-    return render_template_string(HTML_TEMPLATE, message=message, message_type=message_type)
+    return render_template_string(HTML_TEMPLATE, message=message, message_type=message_type, ask_username=ask_username)
 
 if __name__ == '__main__':
     app.run(debug=True)

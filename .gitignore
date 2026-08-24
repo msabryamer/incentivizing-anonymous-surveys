@@ -1,1 +1,11 @@
-_archive/
+# Ignore everything
+*
+
+# Allow code and data folders
+!code/
+!code/**
+!data/
+!data/**
+
+# Keep the gitignore itself
+!.gitignore
