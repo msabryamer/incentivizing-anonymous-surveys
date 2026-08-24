@@ -139,6 +139,7 @@ HTML_TEMPLATE = """
 
         {% if message_type != 'success' %}
         <form method="POST" action="/">
+            <input type="hidden" name="referrer" value="{{ referrer }}">
             {% if ask_username %}
             <input type="text" name="username" placeholder="e.g., your_username" required>
             {% endif %}
@@ -156,11 +157,13 @@ def index():
     message = None
     message_type = None
     ask_username = os.path.exists(VERIFY_CSV_PATH)
+    
+    referrer = request.referrer or ""
 
     if request.method == 'POST':
         email = request.form.get('email', '').strip().lower()
         username = request.form.get('username', '').strip().lower() if ask_username else None
-        referrer = request.referrer or ""
+        referrer = request.form.get('referrer', '')
         
         if not email:
             message = "⚠️ Please enter an email address."
@@ -208,7 +211,7 @@ def index():
                 message = "🎉 Success! Your entry has been recorded."
                 message_type = "success"
 
-    return render_template_string(HTML_TEMPLATE, message=message, message_type=message_type, ask_username=ask_username)
+    return render_template_string(HTML_TEMPLATE, message=message, message_type=message_type, ask_username=ask_username, referrer=referrer)
 
 if __name__ == '__main__':
     app.run(debug=True)
